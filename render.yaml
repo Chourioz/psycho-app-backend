@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: psico-backend
+    runtime: node
+    buildCommand: |
+      npm ci
+      npm run build
+      npx prisma generate
+      npx prisma migrate deploy
+    startCommand: node dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: postgresql://user:@dpg-cobfq0n79t8k6v8m8qg-a.oregon-postgres.render.com/psico_app
+      - key: JWT_SECRET
+        value: tu-super-secreto-seguro-aqui-reemplazar-en-produccion
+      - key: STREAM_API_KEY
+        value: tc8zqxyhfsy2
+      - key: STREAM_API_SECRET
+        value: gz5cbdmmsd3audwwcj8apyn7q62mwkpsx2d6t57ev2u86z4rnbt45q85wb6v4y9z
+    healthCheckPath: /api/healthcheck 

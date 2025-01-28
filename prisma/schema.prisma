@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  SPECIALIST
+  ADMIN
+}
+
+model User {
+  id                String         @id @default(uuid())
+  email             String         @unique
+  password          String
+  firstName         String
+  lastName          String
+  role              UserRole       @default(USER)
+  bio               String?
+  profileImage      String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relaciones
+  specialist        Specialist?
+  appointments      Appointment[]  @relation("UserAppointments")
+  prescriptions     Prescription[] @relation("UserPrescriptions")
+  patientRecords    PatientRecord[] @relation("UserRecords")
+  progressEntries   ProgressEntry[]
+}
+
+model Specialist {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  speciality    String
+  license       String    @unique
+  isVerified    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments  Appointment[] @relation("SpecialistAppointments")
+  prescriptions Prescription[] @relation("SpecialistPrescriptions")
+  patientRecords PatientRecord[] @relation("SpecialistRecords")
+}
+
+model Appointment {
+  id            String      @id @default(uuid())
+  userId        String
+  specialistId  String
+  startTime     DateTime
+  endTime       DateTime
+  status        AppointmentStatus @default(SCHEDULED)
+  callId        String?     @unique
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relaciones
+  user          User        @relation("UserAppointments", fields: [userId], references: [id])
+  specialist    Specialist  @relation("SpecialistAppointments", fields: [specialistId], references: [id])
+
+  @@index([userId])
+  @@index([specialistId])
+  @@index([startTime])
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Prescription {
+  id            String    @id @default(uuid())
+  userId        String
+  specialistId  String
+  medication    String
+  dosage        String
+  frequency     String
+  duration      String
+  notes         String?
+  issuedAt      DateTime  @default(now())
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones
+  user          User      @relation("UserPrescriptions", fields: [userId], references: [id])
+  specialist    Specialist @relation("SpecialistPrescriptions", fields: [specialistId], references: [id])
+}
+
+model PatientRecord {
+  id            String    @id @default(uuid())
+  userId        String
+  specialistId  String
+  sessionDate   DateTime
+  diagnosis     String?
+  notes         String
+  treatment     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones
+  user          User      @relation("UserRecords", fields: [userId], references: [id])
+  specialist    Specialist @relation("SpecialistRecords", fields: [specialistId], references: [id])
+}
+
+model ProgressEntry {
+  id            String    @id @default(uuid())
+  userId        String
+  mood          Int       // Scale of 1-10
+  activities    String[]
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones
+  user          User      @relation(fields: [userId], references: [id])
+} 
