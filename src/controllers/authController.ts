@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/authService';
 import { loginSchema, registerSchema } from '../types/auth';
 import { AppError } from '../utils/AppError';
+import { z } from 'zod';
 
 export const login = async (
   req: Request,
@@ -16,7 +17,7 @@ export const login = async (
     
     if (!result.success) {
       console.log('Login validation failed:', result.error.errors);
-      const errorMessage = result.error.errors.map(err => 
+      const errorMessage = result.error.errors.map((err: z.ZodError['errors'][0]) => 
         `${err.path.join('.')}: ${err.message}`
       ).join(', ');
       throw AppError.ValidationError(errorMessage);
@@ -51,7 +52,7 @@ export const register = async (
     
     if (!result.success) {
       console.log('Registration validation failed:', result.error.errors);
-      const errorMessage = result.error.errors.map(err => 
+      const errorMessage = result.error.errors.map((err: z.ZodError['errors'][0]) => 
         `${err.path.join('.')}: ${err.message}`
       ).join(', ');
       throw AppError.ValidationError(errorMessage);

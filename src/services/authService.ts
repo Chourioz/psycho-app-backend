@@ -9,162 +9,103 @@ type UserWithSpecialist = User & {
   specialist: Specialist | null;
 };
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-default-secret";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
+interface TokenData {
+  userId: string;
+  role: string;
+  specialistId?: string;
+}
 
-class AuthService {
-  private generateToken(data: {
-    userId: string;
-    role: string;
-    specialistId?: string;
-  }): string {
-    console.log("generateToken", { data });
-    return jwt.sign(data, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+export class AuthService {
+  generateToken(data: TokenData): string {
+    return jwt.sign(
+      data,
+      process.env.JWT_SECRET as string,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
   }
 
   async login({ email, password, role }: LoginInput): Promise<AuthResponse> {
-    console.log("Attempting to find user:", { email, role });
-
-    // First find the user
-    const user = (await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email },
-      include: {
-        specialist: true,
-      },
-    })) as UserWithSpecialist | null;
+      include: { specialist: true }
+    });
 
     if (!user) {
-      console.log("User not found:", { email });
-      throw AppError.Unauthorized("Invalid credentials");
+      throw AppError.Unauthorized('Invalid credentials');
     }
 
-    console.log("User found, checking role:", {
-      expectedRole: role,
-      actualRole: user.role,
-    });
-
-    if (user.role !== role) {
-      console.log("Role mismatch:", {
-        expectedRole: role,
-        actualRole: user.role,
-      });
-      throw AppError.Forbidden("Invalid role for this user");
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw AppError.Unauthorized('Invalid credentials');
     }
 
-    console.log("Validating password for user:", user.id);
-    const isValidPassword = await bcrypt.compare(password, user.password);
-
-    if (!isValidPassword) {
-      console.log("Invalid password for user:", user.id);
-      throw AppError.Unauthorized("Invalid credentials");
+    if (role !== user.role) {
+      throw AppError.Unauthorized('Invalid role for this user');
     }
 
-    // For specialists, we'll need to verify their account status
-    // This will be handled once we can regenerate the Prisma client
-    if (role === UserRole.SPECIALIST) {
-      console.log("Specialist login - verification check skipped temporarily");
+    if (user.role === UserRole.SPECIALIST && (!user.specialist || !user.specialist.isVerified)) {
+      throw AppError.Forbidden('Specialist account not verified');
     }
 
-    console.log("Generating token for user:", user.id);
-    const accessToken = this.generateToken({
-      userId: user.id,
-      role,
-      specialistId: user.specialist?.id,
-    });
-
+    const { password: _, ...userWithoutPassword } = user;
     return {
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+      user: userWithoutPassword,
+      accessToken: this.generateToken({
+        userId: user.id,
         role: user.role,
-        profileImage: user.profileImage,
-      },
-      accessToken,
+        specialistId: user.specialist?.id
+      })
     };
   }
 
   async register(input: RegisterInput): Promise<AuthResponse> {
     const existingUser = await prisma.user.findUnique({
-      where: { email: input.email },
+      where: { email: input.email }
     });
 
     if (existingUser) {
-      throw AppError.Conflict("Email already registered");
+      throw AppError.Conflict('User already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(input.password, 10);
+    const hashedPassword = await bcrypt.hash(input.password, 12);
 
-    try {
-      // Create user first
-      const user = (await prisma.user.create({
-        data: {
-          email: input.email,
-          password: hashedPassword,
-          firstName: input.firstName,
-          lastName: input.lastName,
-          role: input.role,
-        },
-        include: {
-          specialist: true,
-        },
-      })) as UserWithSpecialist;
-
-      // For specialists, we'll need to create their specialist record
-      // This will be handled once we can regenerate the Prisma client
-      if (input.role === UserRole.SPECIALIST) {
-        if (!input.speciality || !input.license) {
-          // If specialist data is missing, delete the user and throw error
-          await prisma.user.delete({ where: { id: user.id } });
-          throw AppError.ValidationError(
-            "Speciality and license are required for specialists"
-          );
-        }
-        console.log(
-          "Specialist registration - specialist record creation skipped temporarily"
-        );
+    const user = await prisma.user.create({
+      data: {
+        email: input.email,
+        password: hashedPassword,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        role: input.role,
+        specialist: input.role === UserRole.SPECIALIST ? {
+          create: {
+            speciality: input.speciality!,
+            license: input.license!,
+            isVerified: false
+          }
+        } : undefined
+      },
+      include: {
+        specialist: true
       }
+    });
 
-      const accessToken = this.generateToken({
+    const { password: _, ...userWithoutPassword } = user;
+    return {
+      user: userWithoutPassword,
+      accessToken: this.generateToken({
         userId: user.id,
         role: user.role,
-        specialistId: user.specialist?.id,
-      });
-
-      return {
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-          profileImage: user.profileImage,
-        },
-        accessToken,
-      };
-    } catch (error) {
-      console.error("Registration error:", error);
-      throw error;
-    }
+        specialistId: user.specialist?.id
+      })
+    };
   }
 
-  async validateToken(
-    token: string
-  ): Promise<{ userId: string; role: string; specialistId?: string }> {
+  async validateToken(token: string): Promise<TokenData> {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as {
-        userId: string;
-        role: string;
-        specialistId?: string;
-      };
-      return {
-        userId: decoded.userId,
-        role: decoded.role,
-        specialistId: decoded.specialistId,
-      };
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as TokenData;
+      return decoded;
     } catch (error) {
-      throw AppError.Unauthorized("Invalid token");
+      throw AppError.Unauthorized('Invalid token');
     }
   }
 }

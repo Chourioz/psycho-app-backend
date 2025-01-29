@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
-import { UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import { AppError } from '../utils/AppError';
-import { userService } from '../services/userService';
 import { prisma } from '../lib/prisma';
+import { AuthService } from '../services/authService';
+import { User, Specialist, UserRole } from '@prisma/client';
+import { catchAsync } from '../utils/catchAsync';
+import { LoginInput, RegisterInput } from '../types/auth';
 
 const googleClient = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -13,117 +15,57 @@ const googleClient = new OAuth2Client(
   process.env.GOOGLE_CALLBACK_URL
 );
 
-const generateToken = (userId: string, role: string, specialistId?: string) => {
-  console.log("generateToken", { userId, role, specialistId });
-  return jwt.sign(
-    { userId, role, specialistId },
-    process.env.JWT_SECRET as string,
-    { expiresIn: process.env.JWT_EXPIRES_IN }
-  );
+interface UserWithSpecialist extends User {
+  specialist: Specialist | null;
+}
+
+const generateToken = (userId: string, role: UserRole, specialistId?: string): string => {
+  const authService = new AuthService();
+  return authService.generateToken({ userId, role, specialistId });
 };
 
-export const register = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+const authService = new AuthService();
+
+export const register = catchAsync(async (req: Request, res: Response) => {
+  const registerData: RegisterInput = req.body;
+  const result = await authService.register(registerData);
+  res.json(result);
+});
+
+export const login = catchAsync(async (req: Request, res: Response) => {
+  const loginData: LoginInput = req.body;
+  const result = await authService.login(loginData);
+  res.json(result);
+});
+
+export const googleAuth = catchAsync(async (req: Request, res: Response) => {
+  const { token } = req.body;
+  
   try {
-    const { email, password, firstName, lastName, role, speciality, license } = req.body;
-
-    const user = await userService.createUser({
-      email,
-      password,
-      firstName,
-      lastName,
-      role: role as UserRole,
-      speciality,
-      license
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID
     });
-
-    // Generate token
-    const token = generateToken(user.id, user.role, user?.specialist?.id);
-
-    res.status(201).json({
+    
+    const payload = ticket.getPayload();
+    if (!payload) {
+      throw AppError.Unauthorized('Invalid Google token');
+    }
+    
+    // Handle Google authentication logic here
+    // This is a placeholder for the actual implementation
+    res.json({ 
       status: 'success',
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-        },
-        token,
-      },
+      message: 'Google authentication successful',
+      data: payload 
     });
   } catch (error) {
-    next(error);
+    if (error instanceof Error) {
+      throw AppError.Unauthorized(error.message);
+    }
+    throw AppError.Unauthorized('Failed to verify Google token');
   }
-};
-
-export const login = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { email, password } = req.body;
-
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        specialist: true
-      }
-    });
-
-    if (!user) {
-      throw AppError.Unauthorized('Invalid credentials');
-    }
-
-    // Check password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    if (!isPasswordValid) {
-      throw AppError.Unauthorized('Invalid credentials');
-    }
-
-    // Check if specialist is verified
-    if (user.role === UserRole.SPECIALIST && (!user.specialist || !user.specialist.isVerified)) {
-      throw AppError.Forbidden('Specialist account not verified');
-    }
-
-    // Generate token
-    const token = generateToken(user.id, user.role, user?.specialist?.id);
-
-    res.json({
-      status: 'success',
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
-        },
-        token,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const googleAuth = (req: Request, res: Response) => {
-  const url = googleClient.generateAuthUrl({
-    access_type: 'offline',
-    scope: [
-      'https://www.googleapis.com/auth/userinfo.profile',
-      'https://www.googleapis.com/auth/userinfo.email',
-    ],
-  });
-  res.redirect(url);
-};
+});
 
 export const googleCallback = async (
   req: Request,
@@ -152,7 +94,8 @@ export const googleCallback = async (
     // Find or create user
     let user = await prisma.user.findUnique({
       where: { email: payload.email as string },
-    });
+      include: { specialist: true }
+    }) as UserWithSpecialist | null;
 
     if (!user) {
       user = await prisma.user.create({
@@ -161,18 +104,23 @@ export const googleCallback = async (
           firstName: payload.given_name as string,
           lastName: payload.family_name as string,
           password: await bcrypt.hash(Math.random().toString(36), 12),
-          role: 'USER',
+          role: UserRole.USER,
         },
-      });
+        include: { specialist: true }
+      }) as UserWithSpecialist;
     }
 
     // Generate token
-    const token = generateToken(user.id, user.role, user?.specialist?.id);
+    const token = generateToken(user.id, user.role, user.specialist?.id);
 
     // Redirect to frontend with token
     res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
   } catch (error) {
-    next(error);
+    if (error instanceof Error) {
+      next(new AppError(500, error.message));
+    } else {
+      next(new AppError(500, 'An unexpected error occurred'));
+    }
   }
 };
 
@@ -191,17 +139,18 @@ export const refreshToken = async (
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET as string
-    ) as { userId: string; role: string };
+    ) as { userId: string; role: UserRole };
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-    });
+      include: { specialist: true }
+    }) as UserWithSpecialist | null;
 
     if (!user) {
       throw new AppError(401, 'Invalid refresh token');
     }
 
-    const newToken = generateToken(user.id, user.role, user?.specialist?.id);
+    const newToken = generateToken(user.id, user.role, user.specialist?.id);
 
     res.json({
       status: 'success',
@@ -210,8 +159,20 @@ export const refreshToken = async (
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {
       next(new AppError(401, 'Invalid refresh token'));
+    } else if (error instanceof Error) {
+      next(new AppError(500, error.message));
     } else {
-      next(error);
+      next(new AppError(500, 'An unexpected error occurred'));
     }
   }
-}; 
+};
+
+export const validateToken = catchAsync(async (req: Request, res: Response) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    throw AppError.Unauthorized('No token provided');
+  }
+  
+  const decoded = await authService.validateToken(token);
+  res.json(decoded);
+}); 

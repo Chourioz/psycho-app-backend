@@ -1,5 +1,5 @@
+import { User, UserRole, Specialist } from '@prisma/client';
 import { z } from 'zod';
-import { UserRole } from '@prisma/client';
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email format'),
@@ -16,26 +16,31 @@ export const registerSchema = z.object({
   speciality: z.string().optional(),
   license: z.string().optional()
 }).refine((data) => {
-  if (data.role === 'SPECIALIST') {
+  if (data.role === UserRole.SPECIALIST) {
     return data.speciality && data.license;
   }
   return true;
 }, {
-  message: 'Los especialistas deben proporcionar especialidad y licencia',
+  message: 'Specialists must provide speciality and license',
   path: ['role']
 });
 
-export type LoginInput = z.infer<typeof loginSchema>;
-export type RegisterInput = z.infer<typeof registerSchema>;
+export interface LoginInput {
+  email: string;
+  password: string;
+  role: UserRole;
+}
+
+export interface RegisterInput extends LoginInput {
+  firstName: string;
+  lastName: string;
+  speciality?: string;
+  license?: string;
+}
 
 export interface AuthResponse {
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    role: UserRole;
-    profileImage?: string | null;
+  user: Omit<User, 'password'> & {
+    specialist?: Specialist | null;
   };
   accessToken: string;
 } 
