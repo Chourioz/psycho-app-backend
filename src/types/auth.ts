@@ -43,4 +43,46 @@ export interface AuthResponse {
     specialist?: Specialist | null;
   };
   accessToken: string;
-} 
+}
+
+export const envSchema = z.object({
+  // Application
+  PORT: z.number().default(4000),
+  NODE_ENV: z.enum(['development', 'production']).default('development'),
+  FRONTEND_URL: z.string().url(),
+
+  // Database
+  DATABASE_URL: z.string().min(1),
+
+  // Authentication
+  JWT_SECRET: z.string().min(32),
+  JWT_EXPIRES_IN: z.string().default('7d'),
+
+  // OAuth
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  GOOGLE_CALLBACK_URL: z.string().url(),
+
+  // Stripe
+  STRIPE_SECRET_KEY: z.string().min(1),
+  STRIPE_WEBHOOK_SECRET: z.string().min(1),
+
+  // Email
+  SMTP_HOST: z.string().min(1),
+  SMTP_PORT: z.number().default(587),
+  SMTP_USER: z.string().min(1),
+  SMTP_PASS: z.string().min(1),
+  FROM_EMAIL: z.string().email(),
+
+  // Stream
+  STREAM_API_KEY: z.string().min(1),
+  STREAM_API_SECRET: z.string().min(1),
+
+  // Storage
+  STORAGE_BUCKET: z.string().min(1),
+  STORAGE_REGION: z.string().min(1),
+  STORAGE_ACCESS_KEY: z.string().min(1),
+  STORAGE_SECRET_KEY: z.string().min(1)
+});
+
+export type EnvConfig = z.infer<typeof envSchema>; 

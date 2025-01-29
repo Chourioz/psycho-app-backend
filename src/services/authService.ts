@@ -24,11 +24,17 @@ export class AuthService {
     this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
   }
 
-  generateToken(data: TokenData): string {
+  generateToken(payload: { userId: string; role: UserRole; specialistId?: string }) {
     return jwt.sign(
-      data,
-      this.JWT_SECRET,
-      { expiresIn: this.JWT_EXPIRES_IN }
+      {
+        userId: payload.userId,
+        role: payload.role,
+        specialistId: payload.specialistId
+      },
+      process.env.JWT_SECRET!,
+      {
+        expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+      }
     );
   }
 
