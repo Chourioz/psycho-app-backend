@@ -5,6 +5,7 @@ import { LoginInput, RegisterInput, AuthResponse } from "@/types/auth";
 import { AppError } from "@/utils/AppError";
 import { prisma } from "@/lib/prisma";
 import type { SignOptions } from 'jsonwebtoken';
+import type { StringValue } from "ms"
 
 type UserWithSpecialist = User & {
   specialist: Specialist | null;
@@ -18,11 +19,11 @@ interface TokenData {
 
 export class AuthService {
   private readonly JWT_SECRET: string;
-  private readonly JWT_EXPIRES_IN: string;
+  private readonly JWT_EXPIRES_IN: StringValue;
 
   constructor() {
     this.JWT_SECRET = process.env.JWT_SECRET!;
-    this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+    this.JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN as StringValue) || '7d';
   }
 
   generateToken(payload: { userId: string; role: UserRole; specialistId?: string }) {
