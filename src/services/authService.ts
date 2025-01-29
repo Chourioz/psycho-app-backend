@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { LoginInput, RegisterInput, AuthResponse } from "@/types/auth";
 import { AppError } from "@/utils/AppError";
 import { prisma } from "@/lib/prisma";
+import type { SignOptions } from 'jsonwebtoken';
 
 type UserWithSpecialist = User & {
   specialist: Specialist | null;
@@ -16,25 +17,30 @@ interface TokenData {
 }
 
 export class AuthService {
-  private readonly JWT_SECRET: jwt.Secret;
+  private readonly JWT_SECRET: string;
   private readonly JWT_EXPIRES_IN: string;
 
   constructor() {
-    this.JWT_SECRET = process.env.JWT_SECRET || "your-default-secret";
-    this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
+    this.JWT_SECRET = process.env.JWT_SECRET!;
+    this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
   }
 
-  generateToken(payload: { userId: string; role: "USER" | "SPECIALIST" | "ADMIN"; specialistId?: string }) {
+  generateToken(payload: { userId: string; role: UserRole; specialistId?: string }) {
+    const tokenPayload: TokenData = {
+      userId: payload.userId,
+      role: payload.role,
+      specialistId: payload.specialistId
+    };
+
+    const options: SignOptions = {
+      expiresIn: this.JWT_EXPIRES_IN,
+      algorithm: 'HS256'
+    };
+
     return jwt.sign(
-      {
-        userId: payload.userId,
-        role: payload.role,
-        specialistId: payload.specialistId
-      } as object,
+      tokenPayload, 
       this.JWT_SECRET,
-      {
-        expiresIn: this.JWT_EXPIRES_IN
-      }
+      options
     );
   }
 
