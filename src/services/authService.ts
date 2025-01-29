@@ -11,16 +11,24 @@ type UserWithSpecialist = User & {
 
 interface TokenData {
   userId: string;
-  role: string;
+  role: UserRole;
   specialistId?: string;
 }
 
 export class AuthService {
+  private readonly JWT_SECRET: string;
+  private readonly JWT_EXPIRES_IN: string;
+
+  constructor() {
+    this.JWT_SECRET = process.env.JWT_SECRET || "your-default-secret";
+    this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
+  }
+
   generateToken(data: TokenData): string {
     return jwt.sign(
       data,
-      process.env.JWT_SECRET as string,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      this.JWT_SECRET,
+      { expiresIn: this.JWT_EXPIRES_IN }
     );
   }
 
@@ -102,8 +110,7 @@ export class AuthService {
 
   async validateToken(token: string): Promise<TokenData> {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as TokenData;
-      return decoded;
+      return jwt.verify(token, this.JWT_SECRET) as TokenData;
     } catch (error) {
       throw AppError.Unauthorized('Invalid token');
     }
