@@ -16,7 +16,7 @@ interface TokenData {
 }
 
 export class AuthService {
-  private readonly JWT_SECRET: string;
+  private readonly JWT_SECRET: jwt.Secret;
   private readonly JWT_EXPIRES_IN: string;
 
   constructor() {
@@ -30,10 +30,10 @@ export class AuthService {
         userId: payload.userId,
         role: payload.role,
         specialistId: payload.specialistId
-      },
-      process.env.JWT_SECRET!,
+      } as object,
+      this.JWT_SECRET,
       {
-        expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+        expiresIn: this.JWT_EXPIRES_IN
       }
     );
   }
