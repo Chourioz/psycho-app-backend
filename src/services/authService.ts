@@ -24,7 +24,7 @@ export class AuthService {
     this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
   }
 
-  generateToken(payload: { userId: string; role: UserRole; specialistId?: string }) {
+  generateToken(payload: { userId: string; role: "USER" | "SPECIALIST" | "ADMIN"; specialistId?: string }) {
     return jwt.sign(
       {
         userId: payload.userId,
