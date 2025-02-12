@@ -1,5 +1,6 @@
 import { User, UserRole, Specialist } from '@prisma/client';
 import { z } from 'zod';
+import { Request } from 'express';
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email format'),
@@ -85,4 +86,14 @@ export const envSchema = z.object({
   STORAGE_SECRET_KEY: z.string().min(1)
 });
 
-export type EnvConfig = z.infer<typeof envSchema>; 
+export type EnvConfig = z.infer<typeof envSchema>;
+
+export interface AuthUser {
+  userId: string;
+  role: string;
+  specialistId?: string;
+}
+
+export interface AuthenticatedRequest extends Request {
+  user: AuthUser;
+} 

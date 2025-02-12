@@ -6,6 +6,7 @@ import prescriptionRoutes from './prescription.routes';
 import progressRoutes from './progress.routes';
 import userRoutes from './user.routes';
 import specialistRoutes from './specialist.routes';
+import messageRoutes from './messages';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use('/specialists', authenticateJWT, specialistRoutes);
 router.use('/appointments', authenticateJWT, appointmentRoutes);
 router.use('/prescriptions', authenticateJWT, prescriptionRoutes);
 router.use('/progress', authenticateJWT, progressRoutes);
+router.use('/', messageRoutes);
 
 export { router as routes }; 

@@ -28,9 +28,11 @@ model User {
   // Relaciones
   specialist        Specialist?
   appointments      Appointment[]  @relation("UserAppointments")
+  specialistAppointments Appointment[] @relation("SpecialistAppointments")
   prescriptions     Prescription[] @relation("UserPrescriptions")
   patientRecords    PatientRecord[] @relation("UserRecords")
   progressEntries   ProgressEntry[]
+  sentMessages      Message[]      @relation("SentMessages")
 }
 
 model Specialist {
@@ -44,30 +46,49 @@ model Specialist {
 
   // Relaciones
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appointments  Appointment[] @relation("SpecialistAppointments")
   prescriptions Prescription[] @relation("SpecialistPrescriptions")
   patientRecords PatientRecord[] @relation("SpecialistRecords")
 }
 
+enum CommunicationType {
+  VIDEO_CALL
+  PHONE_CALL
+  LIVE_CHAT
+}
+
 model Appointment {
-  id            String      @id @default(uuid())
-  userId        String
-  specialistId  String
+  id            String            @id @default(cuid())
   startTime     DateTime
   endTime       DateTime
   status        AppointmentStatus @default(SCHEDULED)
-  callId        String?     @unique
-  notes         String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  // Relaciones
-  user          User        @relation("UserAppointments", fields: [userId], references: [id])
-  specialist    Specialist  @relation("SpecialistAppointments", fields: [specialistId], references: [id])
+  communicationType CommunicationType @default(VIDEO_CALL)
+  phoneNumber   String?           // For phone call appointments
+  notes         String?           // Session notes from specialist
+  userId        String
+  specialistId  String
+  callToken     String?           // For video call appointments
+  user          User             @relation("UserAppointments", fields: [userId], references: [id])
+  specialist    User             @relation("SpecialistAppointments", fields: [specialistId], references: [id])
+  messages      Message[]        // For live chat appointments
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   @@index([userId])
   @@index([specialistId])
-  @@index([startTime])
+}
+
+model Message {
+  id            String      @id @default(cuid())
+  content       String
+  appointmentId String
+  senderId      String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  sender        User        @relation("SentMessages", fields: [senderId], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([appointmentId])
+  @@index([senderId])
 }
 
 enum AppointmentStatus {

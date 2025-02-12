@@ -13,7 +13,6 @@
     "@prisma/client": "^6.2.1",
     "@stream-io/node-sdk": "^0.4.9",
     "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.7",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
