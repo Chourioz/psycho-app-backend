@@ -33,6 +33,8 @@ model User {
   patientRecords    PatientRecord[] @relation("UserRecords")
   progressEntries   ProgressEntry[]
   sentMessages      Message[]      @relation("SentMessages")
+  queuedAppointments InstantAppointmentQueue[] @relation("UserQueue")
+  specialistQueue    InstantAppointmentQueue[] @relation("SpecialistQueue")
 }
 
 model Specialist {
@@ -56,6 +58,11 @@ enum CommunicationType {
   LIVE_CHAT
 }
 
+enum AppointmentType {
+  SCHEDULED
+  INSTANT
+}
+
 model Appointment {
   id            String            @id @default(cuid())
   startTime     DateTime
@@ -67,6 +74,8 @@ model Appointment {
   userId        String
   specialistId  String
   callToken     String?           // For video call appointments
+  isInstant     Boolean          @default(false)
+  queuePosition Int?              // For instant appointments
   user          User             @relation("UserAppointments", fields: [userId], references: [id])
   specialist    User             @relation("SpecialistAppointments", fields: [specialistId], references: [id])
   messages      Message[]        // For live chat appointments
@@ -145,4 +154,19 @@ model ProgressEntry {
 
   // Relaciones
   user          User      @relation(fields: [userId], references: [id])
+}
+
+model InstantAppointmentQueue {
+  id            String    @id @default(cuid())
+  userId        String
+  specialistId  String
+  position      Int
+  status        String    @default("WAITING") // WAITING, PROCESSING, COMPLETED, CANCELLED
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation("UserQueue", fields: [userId], references: [id])
+  specialist    User      @relation("SpecialistQueue", fields: [specialistId], references: [id])
+
+  @@unique([userId, specialistId])
+  @@index([specialistId])
 } 

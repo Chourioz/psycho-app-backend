@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient, AppointmentStatus, CommunicationType, Appointment } from '@prisma/client';
+import { Prisma, PrismaClient, AppointmentStatus, CommunicationType } from '@prisma/client';
 import { AppError } from '../utils/AppError';
 
 const prisma = new PrismaClient();
@@ -11,6 +11,7 @@ interface CreateAppointmentData {
   communicationType: CommunicationType;
   phoneNumber?: string;
   notes?: string;
+  isInstant?: boolean;
 }
 
 interface UpdateAppointmentData {
@@ -98,7 +99,7 @@ export class AppointmentService {
       const appointment = await prisma.appointment.create({
         data: {
           userId: data.userId,
-          specialistId: specialist.userId, // Use the specialist's user ID
+          specialistId: specialist.userId,
           startTime: data.startTime,
           endTime: data.endTime,
           communicationType: data.communicationType,
@@ -106,7 +107,26 @@ export class AppointmentService {
           notes: data.notes,
           status: AppointmentStatus.SCHEDULED,
         },
-        include: appointmentInclude,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            }
+          },
+          specialist: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+            }
+          }
+        }
       });
 
       return appointment;

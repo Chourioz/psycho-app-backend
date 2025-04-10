@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { AppointmentService } from "../services/appointmentService";
+import { QueueService } from "../services/queueService";
 import { z } from "zod";
 import {
   UserRole,
@@ -12,6 +13,7 @@ import { AppError } from "../utils/AppError";
 import { AuthenticatedRequest } from "../types/auth";
 
 const appointmentService = new AppointmentService();
+const queueService = new QueueService();
 const prisma = new PrismaClient();
 
 const createAppointmentSchema = z.object({
@@ -56,10 +58,22 @@ export class AppointmentController {
     }
   }
 
+  async getAppointment(appointmentId: string) {
+    return appointmentService.getAppointment(appointmentId);
+  }
+
+  async updateAppointment(
+    appointmentId: string,
+    data: { status?: AppointmentStatus; notes?: string }
+  ) {
+    return appointmentService.updateAppointment(appointmentId, data);
+  }
+
   async getUserAppointments(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user.userId;
       const appointments = await appointmentService.getUserAppointments(userId);
+      console.log("APPOINTMENTS ===>", JSON.stringify(appointments, null, 4));
       res.json(appointments);
     } catch (error) {
       if (error instanceof AppError) {
@@ -314,6 +328,176 @@ export class AppointmentController {
         return res
           .status(500)
           .json({ error: "Failed to get call information" });
+      }
+    }
+  }
+
+  async requestInstantAppointment(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { specialistId } = req.body;
+      const userId = req.user.userId;
+
+      // Check if specialist is available
+      const specialist = await prisma.user.findUnique({
+        where: { id: specialistId },
+        include: { specialist: true },
+      });
+
+      if (!specialist || !specialist.specialist) {
+        return res.status(404).json({ error: "Specialist not found" });
+      }
+
+      // Add user to queue
+      const { position } = await queueService.addToQueue(userId, specialistId);
+
+      // Get estimated wait time
+      const estimatedWaitTime = await queueService.getEstimatedWaitTime(
+        position
+      );
+
+      res.json({
+        position,
+        estimatedWaitTime,
+        message: `You are number ${position} in line. Estimated wait time: ${estimatedWaitTime} minutes`,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        console.error("Failed to request instant appointment:", error);
+        res
+          .status(500)
+          .json({ error: "Failed to request instant appointment" });
+      }
+    }
+  }
+
+  async getQueuePosition(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { specialistId } = req.params;
+      const userId = req.user.userId;
+
+      const position = await queueService.getQueuePosition(
+        userId,
+        specialistId
+      );
+
+      if (!position) {
+        return res.status(404).json({ error: "Not in queue" });
+      }
+
+      const estimatedWaitTime = await queueService.getEstimatedWaitTime(
+        position
+      );
+
+      res.json({
+        position,
+        estimatedWaitTime,
+        message: `You are number ${position} in line. Estimated wait time: ${estimatedWaitTime} minutes`,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        console.error("Failed to get queue position:", error);
+        res.status(500).json({ error: "Failed to get queue position" });
+      }
+    }
+  }
+
+  async cancelQueueRequest(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { specialistId } = req.params;
+      const userId = req.user.userId;
+
+      await queueService.removeFromQueue(userId, specialistId);
+      res.json({ message: "Successfully removed from queue" });
+    } catch (error) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        console.error("Failed to cancel queue request:", error);
+        res.status(500).json({ error: "Failed to cancel queue request" });
+      }
+    }
+  }
+
+  async getSpecialistQueue(req: AuthenticatedRequest, res: Response) {
+    try {
+      const specialistId = req.user.userId;
+
+      // Verify user is a specialist
+      const user = await prisma.user.findUnique({
+        where: { id: specialistId },
+        include: { specialist: true },
+      });
+
+      if (!user || !user.specialist || user.role !== UserRole.SPECIALIST) {
+        return res.status(403).json({
+          error: "Access denied. Only specialists can view their queue.",
+        });
+      }
+
+      const queue = await queueService.getSpecialistQueue(specialistId);
+      res.json(queue);
+    } catch (error) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        console.error("Failed to get specialist queue:", error);
+        res.status(500).json({ error: "Failed to get specialist queue" });
+      }
+    }
+  }
+
+  async processNextInQueue(req: AuthenticatedRequest, res: Response) {
+    try {
+      const specialistId = req.user.userId;
+
+      // Verify user is a specialist
+      const user = await prisma.user.findUnique({
+        where: { id: specialistId },
+        include: { specialist: true },
+      });
+
+      if (!user || !user.specialist || user.role !== UserRole.SPECIALIST) {
+        return res.status(403).json({
+          error: "Access denied. Only specialists can process their queue.",
+        });
+      }
+
+      const nextInQueue = await queueService.processNextInQueue(specialistId);
+
+      if (!nextInQueue) {
+        return res.json({ message: "No users in queue" });
+      }
+
+      // Create instant appointment
+      const now = new Date();
+      const endTime = new Date(now.getTime() + 30 * 60000); // 30 minutes from now
+
+      const appointment = await appointmentService.createAppointment({
+        userId: nextInQueue.userId,
+        specialistId,
+        startTime: now,
+        endTime,
+        communicationType: CommunicationType.VIDEO_CALL,
+        isInstant: true,
+      });
+
+      // Remove from queue
+      await queueService.removeFromQueue(nextInQueue.userId, specialistId);
+
+      res.json({
+        message: "Next user in queue is ready for appointment",
+        appointment,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        console.error("Failed to process next in queue:", error);
+        res.status(500).json({ error: "Failed to process next in queue" });
       }
     }
   }
